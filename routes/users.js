@@ -10,7 +10,6 @@ const User = require("../models/user");
 const Task = require("../models/task");
 
 module.exports = function (router) {    
-    console.log("I'm in users.js")
     var homeRoute = router.route('/');
 
     homeRoute.get(async function (req, res) {
@@ -63,7 +62,6 @@ module.exports = function (router) {
 
     homeRoute.post(async function (req, res) {
         try {
-
             if (!req.body.name || !req.body.email) {
                 return res.status(400).json({message: "Bad request"});
             }
@@ -75,8 +73,15 @@ module.exports = function (router) {
             });
 
             // If there are pendingTasks, gotta assign them on Tasks
+            if (!Array.isArray(req.body.pendingTasks)) {
+                req.body.pendingTasks = [req.body.pendingTasks];
+            }
+
             if (req.body.pendingTasks) {
                 for (const id of req.body.pendingTasks) {
+                    if (id === undefined) {
+                        break;
+                    }
                     // If the task is already assigned to someone else, you cannot take it
                     const task = await Task.findById(id);
                     if (task) {
@@ -90,7 +95,7 @@ module.exports = function (router) {
                     // Change each task's fields
                     await Task.findByIdAndUpdate(id, {
                         assignedUser: req.params.id,
-                        assignedUserName: updatedUser.name
+                        assignedUserName: newUser.name
                     });
                 }
             }
@@ -132,32 +137,28 @@ module.exports = function (router) {
 
 
     idRoute.put(async function(req, res) {
-        try {            
+        try {
             // If the body of the PUT has an email, check if we can change it validly
             if (req.body.email) {
-                const existingUser = await User.findOne({email: req.body.email});
-                if (existingUser) {
+                const existingUsers = await User.find({email: req.body.email});
+                if (existingUsers.length > 1) {
                     return res.status(400).json({error: "A different user already has the email: " + req.body.email});
                 }
             }
-
-            const updatedUser = await User.findByIdAndUpdate(
-                req.params.id,       // ID from URL
-                req.body,            // Fields to update
-                { new: true }        // Return the updated document
-            );
-            
-            if (!updatedUser) {
-                return res.status(404).json({ error: "User not found" });
-            }
-            
             // The pendingTasks array is full of IDs of the tasks, I believe.
+
+            // The problem is pendingTasks is not an array in the PUT. LOL
+            // If it’s a string (one task), make it an array
+            if (!Array.isArray(req.body.pendingTasks)) {
+                req.body.pendingTasks = [req.body.pendingTasks];
+            }
+
             if (req.body.pendingTasks) {
                 for (const id of req.body.pendingTasks) {
                     // If the task is already assigned to someone else, you cannot take it
                     const task = await Task.findById(id);
                     if (task) {
-                        if (task.assignedUser !== "" || task.assignedUserName !== "unassigned") {
+                        if (task.assignedUser !== "" && task.assignedUser !== req.params.id) {
                             return res.status(400).json({ error: "Task is already assigned: " + task.id + " " + task.name});
                         }                       
                     } else {
@@ -165,12 +166,30 @@ module.exports = function (router) {
                     }
 
                     // Change each task's fields
+                    const user = await User.findOne({_id: req.params.id});
                     await Task.findByIdAndUpdate(id, {
                         assignedUser: req.params.id,
-                        assignedUserName: updatedUser.name
+                        assignedUserName: user.name
                     });
                 }
             }
+
+
+            const copy = [...new Set(req.body.pendingTasks)];
+
+            const updatedUser = await User.findByIdAndUpdate(
+                req.params.id,       // ID from URL
+                {...req.body,            // Fields to update
+                // I don't wanna update fields again by accident
+                pendingTasks: copy},
+                { new: true }        // Return the updated document
+            );
+
+
+            if (!updatedUser) {
+                return res.status(404).json({ error: "User not found" });
+            }
+
 
             res.status(200).json({ data: updatedUser });
         } catch (err) {

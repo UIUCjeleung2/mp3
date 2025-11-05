@@ -90,7 +90,9 @@ def main(argv):
         conn.request("POST", "/api/users", params, headers)
         response = conn.getresponse()
         data = response.read()
-        d = json.loads(data)
+        print(data);
+        d = json.loads(data);
+        print(d);
 
         # Store the users id
         userIDs.append(str(d['data']['_id']))
@@ -138,8 +140,11 @@ def main(argv):
 
             # Append the new taskID to pending tasks
             assignedUserTasks = d['data'][0]['pendingTasks']
+            print(assignedUserTasks, "before");
             assignedUserTasks = [str(x).replace('[','').replace(']','').replace("'",'').replace('"','') for x in assignedUserTasks]
             assignedUserTasks.append(taskID)
+
+            print(assignedUserTasks, "after");
 
             # PUT in the user
             params = urllib.parse.urlencode({'_id': assignedUserID, 'name': assignedUserName, 'email': assignedUserEmail, 'dateCreated': assignedUserDate, 'pendingTasks': assignedUserTasks}, True)

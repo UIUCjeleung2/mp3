@@ -4,8 +4,6 @@ const Task = require("../models/task");
 const User = require("../models/user");
 
 module.exports = function (router) {
-  console.log("I'm in tasks.js");
-
   var taskRoute = router.route("/");
 
   // GET /api/tasks
@@ -66,15 +64,33 @@ module.exports = function (router) {
 
           const newTask = new Task({
               name: req.body.name,
-              description: req.body.description,
+              description: req.body.description || "",
               deadline: req.body.deadline,
-              assignedUser: req.body.assignedUser,
-              assignedUserName: req.body.assignedUserName,
-              assignedUserEmail: req.body.assignedUserEmail,
+              assignedUser: req.body.assignedUser || "",
+              assignedUserName: req.body.assignedUserName || "unassigned",
               completed: req.body.completed === "true"
           });
 
           // Do I have to check whether a new taskid is unique?
+          // Nah, but I do have to make sure that the corresponding User's
+          // pendingTasks is updated
+
+          if (req.body.assignedUser !== undefined && req.body.assignedUser !== null && req.body.assignedUser !== "") {
+              const user = await User.findById(req.body.assignedUser);
+              // Make sure pendingTasks is an array
+              if (!Array.isArray(user.pendingTasks)) {
+                  user.pendingTasks = [];
+              }
+
+              // Push only if it's not on pendingTasks already
+              if (!user.pendingTasks.includes(newTask.id)) {
+                  console.log(user.pendingTasks);
+                  console.log("Pushing onto " + user.name + " " + newTask.id);
+                  user.pendingTasks.push(newTask.id);
+              }
+              await user.save();
+          }
+
           await newTask.save();
           res.status(201).json({ data: newTask });
       } catch (err) {
@@ -108,15 +124,38 @@ module.exports = function (router) {
         req.params.id,
         {
           name: req.body.name,
-          description: req.body.description,
+          description: req.body.description || "",
           deadline: req.body.deadline,
-          assignedUser: req.body.assignedUser,
-          assignedUserName: req.body.assignedUserName,
-          assignedUserEmail: req.body.assignedUserEmail,
-          completed: req.body.completed === "true",
+          assignedUser: req.body.assignedUser || "",
+          assignedUserName: req.body.assignedUserName || "unassigned",
+          completed: req.body.completed === "true"
         },
         { new: true, runValidators: true }
       );
+
+      // if (updatedTask.assignedUser !== "") {
+      //     const users = await User.find({_id: updatedTask.assignedUser});
+      //     if (users.length > 1) {
+      //         return res.status(400).json({error: "A different user already has that task assigned"});
+      //     } else if (users.length < 1) {
+      //         return res.status(400).json({error: "No user by that ID exists"}); 
+      //     }
+
+      //     const user = users[0];
+
+      //     if (!Array.isArray(user.pendingTasks)) {
+      //         user.pendingTasks = [];
+      //     }
+
+      //     // Push only if it's not on pendingTasks already
+      //     if (!user.pendingTasks.includes(newTask.id)) {
+      //         console.log(user.pendingTasks);
+      //         console.log("Pushing onto " + user.name + " " + newTask.id);
+      //         user.pendingTasks.push(newTask.id);
+      //     }
+      //     await user.save();          
+
+      // }
 
       if (!updatedTask) return res.status(404).json({ error: "Task not found" });
       res.json({ data: updatedTask });
@@ -132,12 +171,17 @@ module.exports = function (router) {
       const deletedTask = await Task.findByIdAndDelete(req.params.id);
       if (!deletedTask) return res.status(404).json({ error: "Task not found" });
 
-      const user = await User.findById(deletedTask.assignedUser);
-      // Go to the user's tasks and remove it from the lsit
-      var arr = user.pendingTasks.filter(item => item !== deletedTask.id);
-      await User.findByIdAndUpdate(deletedTask.assignedUser, {
-        pendingTasks: arr
-      });
+      if (deletedTask.assignedUser !== "") {
+          // Go to the user's tasks and remove it from the list
+          const user = await User.findById(deletedTask.assignedUser);
+          if (user === null) {
+              return res.json({ data: deletedTask});
+          }
+          var arr = user.pendingTasks.filter(item => item !== deletedTask.id);
+          await User.findByIdAndUpdate(deletedTask.assignedUser, {
+              pendingTasks: arr
+          });
+      }
 
       res.json({ data: deletedTask });
     } catch (err) {
